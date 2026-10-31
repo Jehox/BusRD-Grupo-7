@@ -1,137 +1,153 @@
-# 🚌 BusRD — Entregable E3: Optimización de Consultas e Indexación (Unidad II)
+# 🚌 BusRD — Sistema Integral de Venta de Boletos de Autobús Interurbano
 
 **Asignatura:** ISW-323 Taller de Base de Datos III  
-**Motor de Base de Datos:** Microsoft SQL Server 2025  
-**Script Asociado:** `scripts/06_indices_y_consultas_optimizadas.sql`  
-**Script Auxiliar de Pruebas:** `E3_00_linea_base_y_comparativa.sql`
+**Motor de Base de Datos:** Microsoft SQL Server / SSMS  
+**Institución:** Universidad del Caribe (UNICARIBE) 
+**Grupo:** Grupo 7  
 
 ---
 
-## 📋 1. Propósito del Módulo
+## 👥 Integrantes del Grupo
 
-Este módulo resuelve el **Problema #2 reportado por la gerencia de BusRD (Lentitud operativa y analítica)** mediante el diagnóstico de planes de ejecución, la reescritura de consultas bajo criterios **SARGables** (*Search Argument Able*) y el diseño de **índices secundarios filtrados y de cobertura (`INCLUDE`)**.
+* Jehoamy Corniel De Jesús
+* Arisleyda Almánzar
+* Jostin Martínez
+* Rafael De Moya
 
-Las tres consultas intervenidas corresponden a:
-1. **C1 — Pantalla de Taquilla:** Consulta de asientos disponibles para un viaje específico.
-2. **C2 — Historial de Cliente:** Búsqueda de todos los viajes realizados por un pasajero mediante su número de cédula.
-3. **C3 — Reporte Mensual de Ingresos (2025):** Consolidado contable de boletos activos vendidos e ingresos recaudados por ruta y mes.
-
----
-
-## ⚙️ 2. Parámetros Asignados e Instrucciones de Configuración
-
-Antes de ejecutar el script `06_indices_y_consultas_optimizadas.sql`, verifique o ajuste las variables de grupo en las secciones **3** y **4** del archivo:
-
-| Parámetro | Variable en el Script | Valor / Regla del Trabajo Final |
-| :--- | :--- | :--- |
-| **Número de Grupo** | `@NumeroGrupo` | Cambiar al número de su grupo (`1`, `2`, `3`, etc.) |
-| **Viaje Asignado (C1)** | `@ViajeID` / `@ViajeID_C1` | Sustituir `16000` por el `ViajeID` asignado al grupo por el docente |
-| **Cédula del Cliente (C2)** | `@Cedula` / `@Cedula_C2` | Calculada automáticamente para el cliente `N° Grupo × 1000` (ej. Grupo 1 $\rightarrow$ Cliente `1000` $\rightarrow$ `'40200001000'`) |
+**Docente:** Rayker Scarber Terrero Luciano
 
 ---
 
-## 🚀 3. Orden de Ejecución y Compatibilidad con el Repositorio
+## 📋 Descripción General del Proyecto
 
-El script `06_indices_y_consultas_optimizadas.sql` fue diseñado con **idempotencia total** (`IF NOT EXISTS` / `DROP INDEX IF EXISTS`) para cumplir con la regla de E6 (*"Los scripts deben ejecutarse en orden y sin errores sobre una base recién creada con el script 01"*):
+**BusRD** es una empresa dominicana de transporte interurbano que opera rutas entre Santo Domingo y 10 ciudades del país. La empresa comercializa boletos tanto en taquillas físicas como a través de su plataforma web, escribiendo ambos canales de manera concurrente en la misma base de datos SQL Server.
 
-1. **Detección inteligente del índice de E1 (`01_integridad.sql`):**
-   * En el entregable **E1.4** se crea un índice único filtrado sobre `dbo.Boletos(ViajeID, NumeroAsiento) WHERE Estado = 'Activo'` para impedir dobles ventas activas.
-   * El script `06` consulta el catálogo `sys.indexes`: si el índice de E1 ya existe, lo reutiliza automáticamente para acelerar **C1** sin arrojar error ni duplicar índices; si se ejecuta `06` de forma independiente sobre la base cruda, crea `IX_Boletos_ViajeID_NumeroAsiento_Activo`.
-2. **Pasos para reproducir las evidencias en SSMS:**
-   * **Paso A (Línea Base - Antes):** Sobre la base creada con `01_BusRD_base.sql`, activar **Include Actual Execution Plan (`Ctrl + M`)** y ejecutar el paso 1 de `E3_00_linea_base_y_comparativa.sql` (o `03_consultas_lentas.sql` con los parámetros del grupo) para capturar los planes y métricas iniciales.
-   * **Paso B (Optimización y Verificación - Después):** Ejecutar completo `scripts/06_indices_y_consultas_optimizadas.sql` con **Include Actual Execution Plan (`Ctrl + M`)** activado.
+La gerencia reportó tres problemáticas críticas que motivaron la presente intervención técnica:
+1. **Asientos vendidos dos veces:** Conflictos de concurrencia cuando la taquilla y la web venden de manera simultánea el mismo asiento.
+2. **Lentitud generalizada:** Tiempos de respuesta inaceptables en la pantalla de asientos disponibles, el historial de clientes y el reporte mensual de ingresos.
+3. **Ausencia de controles de seguridad y respaldos:** Acceso generalizado mediante un único usuario con privilegios totales y falta de políticas de respaldo ante borrados accidentales de boletos.
 
 ---
 
-## 🔍 4. Diagnóstico y Solución Técnica por Consulta
+## 🗂️ Estructura del Repositorio
 
-### 4.1 Consulta C1 — Pantalla de Taquilla (Asientos Disponibles)
-* **Diagnóstico (Antes):**
-  * La subconsulta `WHERE b.ViajeID = @ViajeID AND b.Estado = 'Activo'` carecía de un índice por `ViajeID`, provocando un **Clustered Index Scan** sobre toda la tabla `dbo.Boletos` (~230,060 filas, **1,180 lecturas lógicas**) para filtrar un solo autobús de 32 a 44 asientos.
-  * El uso de `NOT IN` introducía sobrecarga adicional frente a esquemas anulables.
-* **Corrección Aplicada:**
-  * Reescritura utilizando `NOT EXISTS` correlacionado, permitiendo al optimizador emplear un operador **Left Anti Semi Join** directo.
-  * Uso del índice único filtrado `IX_Boletos_ViajeID_NumeroAsiento_Activo` sobre `(ViajeID, NumeroAsiento) WHERE Estado = 'Activo'`.
-  * El ordenamiento `ORDER BY s.NumeroAsiento` se resuelve de forma nativa a través del índice agrupado `PK_Asientos (AutobusID, NumeroAsiento)` sin requerir un operador `Sort`.
+El repositorio está estructurado bajo las especificaciones técnicas del Trabajo Final (E6):
 
----
-
-### 4.2 Consulta C2 — Historial de Viajes de un Cliente por Cédula
-* **Diagnóstico (Antes):**
-  * El predicado `WHERE LTRIM(RTRIM(c.Cedula)) = @Cedula` aplicaba funciones de cadena sobre la columna indexada, **rompiendo la SARGabilidad** e invalidando cualquier índice sobre `Cedula`.
-  * Esto forzaba un **Index Scan** sobre las 50,000 filas de `dbo.Clientes` (**395 lecturas lógicas**) seguido de un **Clustered Index Scan** sobre las ~230,060 filas de `dbo.Boletos` (**1,180 lecturas lógicas**) y un operador `Sort`.
-* **Corrección Aplicada:**
-  * **Predicado SARGable:** Eliminación de `LTRIM(RTRIM(...))` dejando `WHERE c.Cedula = @Cedula` (tanto la columna como el parámetro son `CHAR(11)` de longitud fija exacta).
-  * **Índices de Cobertura (*Covering Indexes*):**
-    * `IX_Clientes_Cedula_Covering` en `dbo.Clientes (Cedula) INCLUDE (Nombre, Apellido)`.
-    * `IX_Boletos_ClienteID_Covering` en `dbo.Boletos (ClienteID, ViajeID) INCLUDE (NumeroAsiento, Precio, Estado)`.
-  * **Justificación de `INCLUDE`:** Almacena las columnas proyectadas en el nivel hoja del índice no agrupado, eliminando el 100% de los operadores **Key Lookup** hacia las tablas base.
-
----
-
-### 4.3 Consulta C3 — Reporte Mensual de Ingresos por Ruta (Año 2025)
-* **Diagnóstico (Antes):**
-  * El filtro `WHERE YEAR(b.FechaVenta) = 2025` no es **SARGable**, obligando al motor a evaluar la función `YEAR()` fila por fila mediante un **Clustered Index Scan** sobre `dbo.Boletos` (**1,180 lecturas lógicas**).
-  * La unión `JOIN dbo.Pagos p ON p.BoletoID = b.BoletoID` carecía de índice en la llave foránea `BoletoID`, forzando otro **Clustered Index Scan** completo sobre `dbo.Pagos` (~225,000 filas, **830 lecturas lógicas**).
-* **Corrección Aplicada:**
-  * **Rango de fechas SARGable:** Sustitución de `YEAR(b.FechaVenta) = 2025` por:
-    ```sql
-    WHERE b.FechaVenta >= '2025-01-01T00:00:00'
-      AND b.FechaVenta <  '2026-01-01T00:00:00'
-      AND b.Estado = 'Activo'
-    ```
-  * **Índices de Cobertura:**
-    * `IX_Boletos_FechaVenta_Activo_Covering` en `dbo.Boletos (FechaVenta) INCLUDE (ViajeID, BoletoID) WHERE Estado = 'Activo'`.
-    * `IX_Pagos_BoletoID_Monto` en `dbo.Pagos (BoletoID) INCLUDE (Monto)`.
+```text
+BusRD-Grupo-7/
+│
+├── README.md                              <- Documentación general y técnica del proyecto
+│
+├── scripts/                               <- Scripts SQL ejecutables en orden estricto
+│   ├── 01_integridad.sql                  <- E1: Limpieza, constraints, FKs y reglas
+│   ├── 02_sp_VenderBoleto.sql             <- E2: Procedimiento transaccional de venta segura
+│   ├── 03_sp_AnularBoleto.sql             <- E2: Procedimiento transaccional de anulación
+│   ├── 04_demo_concurrencia_sesionA.sql   <- E2: Demostración concurrencia (Sesión A)
+│   ├── 05_demo_concurrencia_sesionB.sql   <- E2: Demostración concurrencia (Sesión B)
+│   ├── 06_indices_y_consultas_optimizadas.sql <- E3: Índices y consultas reescritas SARGables
+│   ├── 07_seguridad.sql                   <- E4: Logins, roles, vistas y permisos
+│   └── 08_respaldo_y_restauracion.sql     <- E5: Modelo FULL, backups y recuperación STOPAT
+│
+└── evidencias/                            <- Capturas de pantalla numeradas de las pruebas
+    ├── E1_01_datos_sucios_detectados.png
+    ├── E2_01_doble_venta_v0.png
+    ├── E2_02_bloqueo_concurrente_sp.png
+    ├── E3_01_C1_Antes_Plan.png
+    ├── E3_08_Equivalencia_EXCEPT.png
+    ├── E3_09_C1_Despues_Plan.png
+    ├── E4_01_permisos_taquilla.png
+    └── E5_01_recuperacion_stopat.png
+```
 
 ---
 
-## 🗂️ 5. Resumen de Índices Creados en el Script `06`
+## ⚙️ Orden Estricto de Ejecución de Scripts
 
-| Nombre del Índice | Tabla | Columnas Clave (`KEY`) | Columnas Incluidas (`INCLUDE`) | Filtro (`WHERE`) | Consulta Objetivo |
+Para garantizar el despliegue correcto y sin errores sobre una base de datos limpia, los scripts contenidos en la carpeta `scripts/` deben ejecutarse secuencialmente en el siguiente orden:
+
+1. **`01_BusRD_base.sql`** (Script base entregado por la cátedra para crear la base de datos `BusRD` y cargar los datos de prueba).
+2. **`scripts/01_integridad.sql`** (Depuración de datos sucios, restricciones CHECK, llaves foráneas y unicidad).
+3. **`scripts/02_sp_VenderBoleto.sql`** (Creación del procedimiento transaccional seguro contra dobles ventas).
+4. **`scripts/03_sp_AnularBoleto.sql`** (Creación del procedimiento de anulación con reverso contable negativo).
+5. **`scripts/04_demo_concurrencia_sesionA.sql`** & **`scripts/05_demo_concurrencia_sesionB.sql`** (Demostración de bloqueo y espera controlada).
+6. **`scripts/06_indices_y_consultas_optimizadas.sql`** (Creación de índices secundarios y reescritura de las 3 consultas lentas).
+7. **`scripts/07_seguridad.sql`** (Creación de usuarios por rol, vistas protegidas y asignación de permisos por principio de mínimo privilegio).
+8. **`scripts/08_respaldo_y_restauracion.sql`** (Configuración del modelo FULL, ejecución de la cadena de backups y restauración puntual `STOPAT`).
+
+---
+
+## 🔍 Resumen Técnico por Entregable
+
+### E1. Integridad del Modelo (Unidad I)
+* **Diagnóstico de Datos Sucios:** Se identificaron 60 boletos activos duplicados para un mismo viaje y asiento, y 15 registros de pagos huérfanos sin boleto de origen.
+* **Limpieza Transaccional:** Se conservó únicamente el primer boleto vendido cronológicamente por cada asiento ocupado y se marcaron los posteriores como `'Anulado'`; los pagos huérfanos fueron depurados de forma transaccional.
+* **Restricciones del Esquema:**
+  * Llaves foráneas (`FK`) en todas las tablas relacionadas para asegurar integridad referencial.
+  * Restricciones `CHECK` para dominios (`Estado`, `Canal`, `Metodo`, `Tipo`) y rangos positivos (`Precio`, `Monto`, `Capacidad`).
+  * Restricciones `UNIQUE` en `Clientes.Cedula` y `Autobuses.Placa`.
+* **Regla Antiduplicidad:** Creación de un índice único filtrado sobre `dbo.Boletos(ViajeID, NumeroAsiento) WHERE Estado = 'Activo'`, impidiendo físicamente desde el motor de base de datos que existan dos boletos activos para el mismo asiento y viaje.
+
+---
+
+### E2. Venta Transaccional y Concurrencia (Unidad I)
+* **Reproducción del Defecto (`sp_VenderBoleto_v0`):** Mediante dos sesiones simultáneas en SSMS bajo aislamiento `READ COMMITTED`, se evidenció una condición de carrera (*Check-then-Act*). Ambas sesiones consultaron y encontraron el asiento libre, registrando dos boletos activos para el mismo asiento del viaje asignado.
+* **Procedimiento Seguro (`dbo.sp_VenderBoleto`):**
+  * **Validaciones:** Comprueba que el viaje exista y esté `'Programado'`, que el asiento pertenezca al autobús del viaje, que el cliente exista y que el canal/método sean válidos.
+  * **Atomicidad:** Inserción de boleto y pago dentro de la misma transacción con control de errores (`TRY...CATCH`, `ROLLBACK` y `THROW`).
+  * **Concurrencia:** Uso de hints `UPDLOCK` y `HOLDLOCK` al consultar la disponibilidad, logrando que la segunda sesión espere de forma controlada y sea rechazada al liberarse el bloqueo con el error: *"El asiento ya está vendido"*.
+  * **Salida y Demora:** Parámetro `@BoletoID INT OUTPUT` y parámetro opcional `@SimularDemora BIT = 0` para pruebas de concurrencia.
+* **Anulación (`dbo.sp_AnularBoleto`):** Procedimiento transaccional que cambia el estado a `'Anulado'` y registra un movimiento compensatorio en `Pagos` con monto negativo (`-$X.XX`), conservando la trazabilidad contable.
+
+---
+
+### E3. Optimización y Rendimiento de Consultas (Unidad II)
+* **Diagnóstico:** Las 3 consultas entregadas en `03_consultas_lentas.sql` generaban escaneos masivos (*Clustered Index Scans*) de más de 230,000 registros de boletos y 225,000 pagos por carencia de índices y predicados no SARGables (`YEAR()`, `LTRIM/RTRIM`).
+* **Intervenciones Aplicadas:**
+  * **C1 (Asientos Disponibles):** Reescritura con `NOT EXISTS` correlacionado (*Left Anti Semi Join*) e indización filtrada sobre `Boletos(ViajeID, NumeroAsiento) WHERE Estado = 'Activo'`.
+  * **C2 (Historial por Cédula):** Eliminación de `LTRIM(RTRIM())` en favor de comparación directa SARGable (`WHERE c.Cedula = @Cedula`) y creación de índices de cobertura con `INCLUDE` en `Clientes` y `Boletos`.
+  * **C3 (Ingresos 2025):** Sustitución de `YEAR(FechaVenta) = 2025` por rango de fechas SARGable (`>= '2025-01-01'` y `< '2026-01-01'`) e índices de cobertura en `Boletos` y `Pagos(BoletoID) INCLUDE(Monto)`.
+* **Resultados Obtenidos:**
+
+| Consulta | Operador (Antes ➔ Después) | Lecturas Lógicas (Antes) | Lecturas Lógicas (Después) | Reducción I/O | Tiempo CPU |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `IX_Boletos_ViajeID_NumeroAsiento_Activo`* | `dbo.Boletos` | `ViajeID, NumeroAsiento` | *(Ninguna — Cubierto por la clave)* | `Estado = 'Activo'` | **C1** y `sp_VenderBoleto` |
-| `IX_Clientes_Cedula_Covering` | `dbo.Clientes` | `Cedula` | `Nombre, Apellido` | *(Sin filtro)* | **C2** |
-| `IX_Boletos_ClienteID_Covering` | `dbo.Boletos` | `ClienteID, ViajeID` | `NumeroAsiento, Precio, Estado` | *(Sin filtro)* | **C2** |
-| `IX_Boletos_FechaVenta_Activo_Covering` | `dbo.Boletos` | `FechaVenta` | `ViajeID, BoletoID` | `Estado = 'Activo'` | **C3** |
-| `IX_Pagos_BoletoID_Monto` | `dbo.Pagos` | `BoletoID` | `Monto` | *(Sin filtro)* | **C3** |
+| **C1 (Taquilla)** | `Clustered Index Scan` ➔ `Index Seek` | 1,184 págs. | **6 págs.** | **-99.5%** | ~20 ms ➔ **0 ms** |
+| **C2 (Cliente)** | `Index Scan` + `Sort` ➔ `Index Seek` Cubierto | 1,625 págs. | **19 págs.** | **-98.8%** | ~35 ms ➔ **0 ms** |
+| **C3 (Ingresos)** | `Clustered Index Scan` ➔ `Index Seek` (Rango) | 2,062 págs. | **~640 págs.** | **-69.0%** | ~95 ms ➔ **~15 ms** |
 
-*\*Nota: Si el script `01_integridad.sql` (E1.4) ya creó el índice único filtrado sobre `Boletos(ViajeID, NumeroAsiento) WHERE Estado = 'Activo'`, el script `06` lo detecta y reutiliza sin duplicarlo.*
-
----
-
-## 📊 6. Tabla Comparativa de Resultados (`STATISTICS IO / TIME`)
-
-| Consulta | Operadores del Plan (Antes $\rightarrow$ Después) | Lecturas Lógicas (Antes) | Lecturas Lógicas (Después) | Tiempo de CPU (Antes $\rightarrow$ Después) | Mejora en Lecturas (I/O) |
-| :--- | :--- | :---: | :---: | :---: | :---: |
-| **C1 · Asientos Libres** | `Clustered Index Scan` (`Boletos`) $\rightarrow$ `Index Seek` Filtrado + `Left Anti Semi Join` | **1,184 páginas** (`Boletos`: 1,180) | **6 páginas** (`Boletos`: 2) | ~15–31 ms $\rightarrow$ **0 ms** | **-99.5%** |
-| **C2 · Historial Cliente** | `Clustered Index Scan` (`Clientes` y `Boletos`) + `Sort` $\rightarrow$ `Index Seek` Cubierto + `Nested Loops` | **1,625 páginas** (`Clientes`: 395 \| `Boletos`: 1,180) | **19 páginas** (`Clientes`: 2 \| `Boletos`: 3) | ~31–47 ms $\rightarrow$ **0 ms** | **-98.8%** |
-| **C3 · Ingresos 2025** | `Clustered Index Scan` (`Boletos` y `Pagos`) $\rightarrow$ `Index Seek` (Rango) + `Index Scan/Seek` Cubierto (`Pagos`) | **2,062 páginas** (`Boletos`: 1,180 \| `Pagos`: 830) | **~640 páginas** (`Boletos`: ~245 \| `Pagos`: ~345) | ~78–110 ms $\rightarrow$ **~15 ms** | **-69.0%** |
+* **Validación de Datos:** Mediante el operador `EXCEPT` en ambos sentidos, se confirmó que las consultas optimizadas devuelven exactamente el mismo resultado (`0 filas de diferencia`).
+* **Evaluación de Índices vs. Escrituras:** Mantener los nuevos índices durante un `INSERT` en `sp_VenderBoleto` añade apenas entre 4 y 6 lecturas lógicas en memoria (< 0.5 ms), costo marginal que queda plenamente justificado al evitar bloqueos masivos a nivel de tabla.
 
 ---
 
-## ✅ 7. Verificación de Equivalencia Exacta de Datos (`EXCEPT`)
-
-La **Sección 3** del script `06_indices_y_consultas_optimizadas.sql` ejecuta de forma automatizada una prueba de diferencia simétrica de conjuntos entre cada consulta original (`#Orig`) y su versión reescrita (`#Opt`):
-
-$$\text{Diferencias} = \text{COUNT}\big((\text{Original} \setminus \text{Optimizada}) \cup (\text{Optimizada} \setminus \text{Original})\big)$$
-
-* **Verificación C1:** `0 filas diferentes`
-* **Verificación C2:** `0 filas diferentes`
-* **Verificación C3:** `0 filas diferentes`
-
-Esto garantiza que las reescrituras SARGables producen **exactamente el mismo resultado** que las consultas originales entregadas en `03_consultas_lentas.sql`.
+### E4. Seguridad y Control de Accesos (Unidad III)
+* **Principio de Mínimo Privilegio:** Se implementaron tres roles de base de datos para eliminar el uso de credenciales administrativas compartidas:
+  * `rol_taquilla`: Permiso exclusivo de ejecución sobre `sp_VenderBoleto` y `sp_AnularBoleto`, y acceso de lectura a la vista `vw_AsientosDisponibles`. Sin permisos directos sobre tablas base.
+  * `rol_reportes`: Permiso de lectura sobre la vista `vw_VentasMensuales`. Acceso denegado a datos sensibles como `Email` y `Telefono` de clientes.
+  * `rol_admin`: Permisos totales para labores de mantenimiento y administración de la base de datos.
+* **Ownership Chaining:** Se documentó cómo el encadenamiento de propiedad permite a los usuarios ejecutar procedimientos y consultar vistas sin necesidad de otorgarles permisos sobre las tablas subyacentes.
+* **Validación:** Comprobación mediante `EXECUTE AS USER` de accesos permitidos y denegados para cada usuario de prueba.
 
 ---
 
-## ⚖️ 8. Conclusión: Impacto de los Índices en `dbo.sp_VenderBoleto` (Índices vs. Escrituras)
+### E5. Respaldo y Recuperación (Unidad III)
+* **Modelo de Recuperación:** Modificación de `SIMPLE` a `FULL` para garantizar la preservación de la cadena de transacciones y permitir recuperaciones a un punto específico en el tiempo.
+* **Secuencia de Respaldo y Simulación de Fallo:**
+  1. Respaldo Completo (`FULL`).
+  2. Venta simulada de 5 boletos.
+  3. Respaldo Diferencial (`DIFFERENTIAL`).
+  4. Venta simulada de 3 boletos.
+  5. Respaldo de Registro de Transacciones (`LOG`).
+  6. Simulación de desastre: `DELETE` accidental de los boletos del viaje asignado.
+  7. Respaldo de la cola del registro (*Tail-Log Backup*) con `NO_TRUNCATE`.
+* **Restauración a un Punto en el Tiempo (`STOPAT`):** Restauración en una nueva base de datos (`BusRD_Recuperada`) aplicando la secuencia `FULL` (con `NORECOVERY`), `DIFF` (con `NORECOVERY`), `LOG` y `TAIL-LOG` hasta el segundo exacto anterior al `DELETE`, recuperando con éxito los 8 boletos nuevos y la totalidad de los boletos eliminados.
+* **Política de Respaldos Propuesta:**
+  * **FULL:** Semanal (domingos a las 01:00 AM), retención de 4 semanas.
+  * **DIFERENCIAL:** Diario (lunes a sábado a las 02:00 AM), retención de 7 días.
+  * **LOG:** Cada 15 minutos en horario operativo (06:00 AM a 10:00 PM), retención de 3 días.
 
-Al evaluar el efecto de los índices creados sobre el procedimiento transaccional `dbo.sp_VenderBoleto`:
+---
 
-1. **Beneficio crítico en concurrencia y validación (`SELECT WITH (UPDLOCK, HOLDLOCK)`):**
-   * El primer paso de `sp_VenderBoleto` comprueba si el asiento está ocupado en ese viaje y retiene un bloqueo para evitar la doble venta.
-   * Sin el índice filtrado en `dbo.Boletos (ViajeID, NumeroAsiento) WHERE Estado = 'Activo'`, SQL Server tendría que escanear las ~230,000 filas de `Boletos`, bloqueando toda la tabla y paralizando las ventas concurrentes de todas las rutas del país. Con el índice, el bloqueo se limita exclusivamente al asiento y viaje solicitado (*Key-Range Lock* de 2 lecturas lógicas).
-2. **Costo marginal en las inserciones (`INSERT`):**
-   * **`dbo.Clientes`:** No sufre ningún `INSERT` ni `UPDATE` durante la venta de un boleto; por tanto, `IX_Clientes_Cedula_Covering` tiene **impacto cero** en `sp_VenderBoleto`.
-   * **`dbo.Boletos` y `dbo.Pagos`:** Insertar 1 boleto activo y 1 pago actualiza los índices de cobertura correspondientes, añadiendo únicamente entre **4 y 6 lecturas/escrituras lógicas en memoria RAM (< 0.5 ms)** por transacción.
-3. **Veredicto:** El costo adicional de escritura (< 0.5 ms) es imperceptible para la operación en taquilla o web, mientras que la ganancia en concurrencia (evitar bloqueos de tabla) y en lectura (**hasta un 99.5% menos de I/O**) es determinante para la estabilidad de BusRD.
+## 🔗 Enlaces del Proyecto
+
+* **Repositorio de GitHub:** [https://github.com/Jehox/BusRD-Grupo-7](https://github.com/Jehox/BusRD-Grupo-7)
+* **Documento del Informe Final (Google Docs):** [Enlace al Informe Compartido](https://docs.google.com/document/d/1T5dVKKdyJ24cwx6eOwceNT7cyeK4RJJWowzmMVvssl0/edit?usp=sharing)

@@ -1,9 +1,9 @@
 # 🚌 BusRD — Sistema Integral de Venta de Boletos de Autobús Interurbano
 
-**Asignatura:** ISW-323 Taller de Base de Datos III  
-**Motor de Base de Datos:** Microsoft SQL Server / SSMS  
-**Institución:** Universidad del Caribe (UNICARIBE) 
-**Grupo:** Grupo 7  
+**Asignatura:** ISW-323 Taller de Base de Datos III<br>
+**Motor de Base de Datos:** Microsoft SQL Server / SSMS<br>
+**Institución:** Universidad del Caribe (UNICARIBE)<br>
+**Grupo:** Grupo 7<br>
 
 ---
 
@@ -31,32 +31,53 @@ La gerencia reportó tres problemáticas críticas que motivaron la presente int
 
 ## 🗂️ Estructura del Repositorio
 
-El repositorio está estructurado bajo las especificaciones técnicas del Trabajo Final (E6):
+El repositorio está estructurado fiel a los archivos y carpetas del proyecto:
 
 ```text
 BusRD-Grupo-7/
 │
 ├── README.md                              <- Documentación general y técnica del proyecto
 │
-├── scripts/                               <- Scripts SQL ejecutables en orden estricto
-│   ├── 01_integridad.sql                  <- E1: Limpieza, constraints, FKs y reglas
-│   ├── 02_sp_VenderBoleto.sql             <- E2: Procedimiento transaccional de venta segura
-│   ├── 03_sp_AnularBoleto.sql             <- E2: Procedimiento transaccional de anulación
-│   ├── 04_demo_concurrencia_sesionA.sql   <- E2: Demostración concurrencia (Sesión A)
-│   ├── 05_demo_concurrencia_sesionB.sql   <- E2: Demostración concurrencia (Sesión B)
-│   ├── 06_indices_y_consultas_optimizadas.sql <- E3: Índices y consultas reescritas SARGables
-│   ├── 07_seguridad.sql                   <- E4: Logins, roles, vistas y permisos
+├── scripts/                               <- Scripts SQL ejecutables del proyecto
+│   ├── 01_integridad_modelo.sql           <- E1: Limpieza de datos sucios, constraints, FKs y reglas antiduplicidad
+│   ├── 02_sp_VenderBoleto.sql             <- E2: Procedimiento transaccional seguro contra dobles ventas
+│   ├── 03_consultas_lentas.sql            <- E3: Consultas originales (línea base con problemas de rendimiento)
+│   ├── 04_demo_concurrencia_sesionA.sql   <- E2: Demostración de concurrencia y bloqueo (Sesión A)
+│   ├── 05_demo_concurrencia_sesionB.sql   <- E2: Demostración de concurrencia y bloqueo (Sesión B)
+│   ├── 06_indices_y_consultas_optimizadas.sql <- E3: Índices de cobertura/filtrados y consultas optimizadas SARGables
+│   ├── 07_Seguridad.sql                   <- E4: Vistas protegidas, roles de usuario y permisos de mínimo privilegio
 │   └── 08_respaldo_y_restauracion.sql     <- E5: Modelo FULL, backups y recuperación STOPAT
 │
-└── evidencias/                            <- Capturas de pantalla numeradas de las pruebas
-    ├── E1_01_datos_sucios_detectados.png
-    ├── E2_01_doble_venta_v0.png
-    ├── E2_02_bloqueo_concurrente_sp.png
-    ├── E3_01_C1_Antes_Plan.png
-    ├── E3_08_Equivalencia_EXCEPT.png
-    ├── E3_09_C1_Despues_Plan.png
-    ├── E4_01_permisos_taquilla.png
-    └── E5_01_recuperacion_stopat.png
+└── evidencias/                            <- Capturas de pantalla y documentos de soporte de pruebas
+    ├── 06/                                <- E3: Capturas de planes de ejecución y optimización (E3_00 a E3_14)
+    │   ├── E3_00_UsoDB.png
+    │   ├── E3_01_C1_CreacionIndices.png
+    │   ├── E3_02_C1_PlanEjecucion.png
+    │   ├── E3_03_C2_RespaldoBusquedaCedula.png
+    │   ├── E3_04_C2_PlanEjecucion.png
+    │   ├── E3_05_C2_HistorialBoletos.png
+    │   ├── E3_06_C2_PlanEjecucion.png
+    │   ├── E3_07_C3_ReporteMensualVentasPorRangoDeFechaVenta.png
+    │   ├── E3_08_C3_PlanEjecucion.png
+    │   ├── E3_09_C3_CoberturaPagosBoletoIDyMonto.png
+    │   ├── E3_10_C3_PlanEjecucion.png
+    │   ├── E3_11_S3_VerificacionOgVsOpt.png
+    │   ├── E3_12_S3_PlanEjecucion.png
+    │   ├── E3_13_S4_ConsultasOpt.png
+    │   └── E3_14_S4_PlanEjecucion.png
+    ├── E2_01_Doble_venta.png              <- E2: Pruebas de venta y concurrencia (E2_01 a E2_11)
+    ├── E2_02_Venta_unica_con_pago.png
+    ├── E2_03_Anulacion_y_reverso.png
+    ├── E2_04_Segunda_anulacion_rechazada.png
+    ├── E2_05_Saldo_sin_reverso_duplicado.png
+    ├── E2_06_Aislamiento_sesionA.png
+    ├── E2_07_Aislamiento_sesionB.png
+    ├── E2_08_Venta_unica_asiento4.png
+    ├── E2_09_Espera_por_bloqueo.png
+    ├── E2_10_Segunda_venta_rechazada.png
+    ├── E2_11_Boleto_generado.png
+    ├── E4 evidencias.pdf                  <- E4: Informe de evidencias de seguridad y roles
+    └── E5. Eviencias.pdf                  <- E5: Informe de evidencias de respaldos y recuperación
 ```
 
 ---
@@ -65,13 +86,13 @@ BusRD-Grupo-7/
 
 Para garantizar el despliegue correcto y sin errores sobre una base de datos limpia, los scripts contenidos en la carpeta `scripts/` deben ejecutarse secuencialmente en el siguiente orden:
 
-1. **`01_BusRD_base.sql`** (Script base entregado por la cátedra para crear la base de datos `BusRD` y cargar los datos de prueba).
-2. **`scripts/01_integridad.sql`** (Depuración de datos sucios, restricciones CHECK, llaves foráneas y unicidad).
+1. **`01_BusRD_base.sql`** (Script base entregado por la cátedra para crear la base de datos `BusRD` y cargar los datos de prueba iniciales).
+2. **`scripts/01_integridad_modelo.sql`** (Depuración de datos sucios, restricciones CHECK, llaves foráneas y unicidad).
 3. **`scripts/02_sp_VenderBoleto.sql`** (Creación del procedimiento transaccional seguro contra dobles ventas).
-4. **`scripts/03_sp_AnularBoleto.sql`** (Creación del procedimiento de anulación con reverso contable negativo).
-5. **`scripts/04_demo_concurrencia_sesionA.sql`** & **`scripts/05_demo_concurrencia_sesionB.sql`** (Demostración de bloqueo y espera controlada).
-6. **`scripts/06_indices_y_consultas_optimizadas.sql`** (Creación de índices secundarios y reescritura de las 3 consultas lentas).
-7. **`scripts/07_seguridad.sql`** (Creación de usuarios por rol, vistas protegidas y asignación de permisos por principio de mínimo privilegio).
+4. **`scripts/04_demo_concurrencia_sesionA.sql`** & **`scripts/05_demo_concurrencia_sesionB.sql`** (Demostración de bloqueo y espera controlada).
+5. **`scripts/03_consultas_lentas.sql`** (Consultas originales sin optimizar para toma de métricas y línea base de rendimiento).
+6. **`scripts/06_indices_y_consultas_optimizadas.sql`** (Creación de índices secundarios y reescritura de las 3 consultas lentas SARGables con verificación `EXCEPT`).
+7. **`scripts/07_Seguridad.sql`** (Creación de roles, vistas protegidas y asignación de permisos por principio de mínimo privilegio).
 8. **`scripts/08_respaldo_y_restauracion.sql`** (Configuración del modelo FULL, ejecución de la cadena de backups y restauración puntual `STOPAT`).
 
 ---
@@ -149,5 +170,4 @@ Para garantizar el despliegue correcto y sin errores sobre una base de datos lim
 
 ## 🔗 Enlaces del Proyecto
 
-* **Repositorio de GitHub:** [https://github.com/Jehox/BusRD-Grupo-7](https://github.com/Jehox/BusRD-Grupo-7)
 * **Documento del Informe Final (Google Docs):** [Enlace al Informe Compartido](https://docs.google.com/document/d/1T5dVKKdyJ24cwx6eOwceNT7cyeK4RJJWowzmMVvssl0/edit?usp=sharing)

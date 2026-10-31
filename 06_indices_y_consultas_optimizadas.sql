@@ -72,10 +72,26 @@ IF NOT EXISTS (
       )
 )
 BEGIN
-    CREATE UNIQUE NONCLUSTERED INDEX IX_Boletos_ViajeID_NumeroAsiento_Activo
-    ON dbo.Boletos (ViajeID, NumeroAsiento)
-    WHERE Estado = 'Activo';
-    PRINT 'Creado: IX_Boletos_ViajeID_NumeroAsiento_Activo';
+    -- Si no se ha corrido E1 (hay asientos duplicados activos), se crea NONCLUSTERED sin UNIQUE
+    IF EXISTS (
+        SELECT 1 FROM dbo.Boletos 
+        WHERE Estado = 'Activo' 
+        GROUP BY ViajeID, NumeroAsiento 
+        HAVING COUNT(*) > 1
+    )
+    BEGIN
+        CREATE NONCLUSTERED INDEX IX_Boletos_ViajeID_NumeroAsiento_Activo
+        ON dbo.Boletos (ViajeID, NumeroAsiento)
+        WHERE Estado = 'Activo';
+        PRINT 'Creado: IX_Boletos_ViajeID_NumeroAsiento_Activo (No único porque aún existen datos sucios de E1)';
+    END
+    ELSE
+    BEGIN
+        CREATE UNIQUE NONCLUSTERED INDEX IX_Boletos_ViajeID_NumeroAsiento_Activo
+        ON dbo.Boletos (ViajeID, NumeroAsiento)
+        WHERE Estado = 'Activo';
+        PRINT 'Creado: IX_Boletos_ViajeID_NumeroAsiento_Activo (UNIQUE)';
+    END
 END
 ELSE
 BEGIN
